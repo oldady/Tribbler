@@ -34,10 +34,10 @@ type storageServer struct {
 	keyValueMap map[string]string
 	keyListMap  map[string]map[string]struct{} //key->list<string>
 
-	//storage server 不用delete过期的lease @pizza678
+	//storage server
 	leaseMap map[string]*list.List //key->list<Lease>//map key to list<Libstore's Hostport String, vaid time>
 
-	//每个key加锁
+	//a lock for each key
 	lockMap map[string]*sync.Mutex //lock map for keys in keyValueMap and keyListMap
 
 	mutex *sync.Mutex //lock when adding to lockMap
@@ -49,9 +49,7 @@ type storageServer struct {
 // is the master; otherwise, this server is a slave. numNodes is the total number of
 // servers in the ring. port is the port number that this server should listen on.
 // nodeID is a random, unsigned 32-bit ID identifying this server.
-//
-// This function should return only once all storage servers have joined the ring,
-// and should return a non-nil error if the storage server could not be started.
+
 
 func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID uint32) (StorageServer, error) {
 	portStr := fmt.Sprintf("%d", port)
