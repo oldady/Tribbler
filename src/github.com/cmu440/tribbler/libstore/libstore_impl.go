@@ -1,6 +1,7 @@
 package libstore
 
 import (
+	//"log"
 	"errors"
 	"net/rpc"
 	"strings"
@@ -46,7 +47,7 @@ type libstore struct {
 // simply reuse the TribServer's HTTP handler since the two run in the same process).
 func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libstore, error) {
 
-	fmt.Println("begin connection")
+	//fmt.Println("begin connection")
 	cli, err := rpc.DialHTTP("tcp", masterServerHostPort)
 	if err != nil {
 		return nil, err
@@ -83,7 +84,18 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 	// DO WEEE NEED TO SORT???
 	//fmt.Println("connection succeed!")
 	rpc.RegisterName("LeaseCallbacks", librpc.Wrap(lib))
+
+	go CleanCache(lib.leases)
 	return lib, nil
+}
+
+func CleanCache(leases *cache.Cache) {
+	d := time.Duration(storagerpc.LeaseGuardSeconds) * time.Second
+
+	for {
+		leases.Clear()
+		time.Sleep(d)
+	}
 }
 
 func (ls *libstore) Get(key string) (string, error) {
