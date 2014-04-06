@@ -17,7 +17,7 @@ import (
 
 type LeaseRecord struct {
 	HostPort string
-	ValidSeconds int
+	GrantedTime time.Time
 }
 
 type storageServer struct {
@@ -35,7 +35,7 @@ type storageServer struct {
 	keyListMap  map[string]map[string]struct{} //key->list<string>
 
 	//storage server 不用delete过期的lease @pizza678
-	leaseMap map[string]list.List //key->list<Lease>//map key to list<Libstore's Hostport String, vaid time>
+	leaseMap map[string]*list.List //key->list<Lease>//map key to list<Libstore's Hostport String, vaid time>
 
 	//每个key加锁
 	lockMap map[string]*sync.Mutex //lock map for keys in keyValueMap and keyListMap
@@ -67,7 +67,7 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 	newServer.nodeList = make([]storagerpc.Node, numNodes)
 	newServer.keyValueMap = make(map[string]string)
 	newServer.keyListMap = make(map[string]map[string]struct{})
-	newServer.leaseMap = make(map[string]list.List)
+	newServer.leaseMap = make(map[string]*list.List)
 	newServer.lockMap = make(map[string]*sync.Mutex)
 	newServer.mutex = new(sync.Mutex)
 
@@ -145,6 +145,7 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 	}
 
 	newServer.serverReady = true
+	go newServer.timer()
 	return newServer, nil
 }
 
@@ -206,12 +207,12 @@ func (ss *storageServer) Get(args *storagerpc.GetArgs, reply *storagerpc.GetRepl
 	grantLease := false
 	if args.WantLease {
 		//add to lease map
-		var libServerList list.List
+		var libServerList *list.List
 		libServerList, exist := ss.leaseMap[args.Key]
 		if !exist {
-			libServerList = *new(list.List)
+			libServerList = new(list.List)
 		}
-		leaseRecord := LeaseRecord{args.HostPort, storagerpc.LeaseSeconds + storagerpc.LeaseGuardSeconds}
+		leaseRecord := LeaseRecord{args.HostPort, time.Now()}
 		libServerList.PushBack(leaseRecord)
 		ss.leaseMap[args.Key] = libServerList
 		grantLease = true
@@ -253,12 +254,12 @@ func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.Get
 	grantLease := false
 	if args.WantLease {
 		//add to lease map
-		var libServerList list.List
+		var libServerList *list.List
 		libServerList, exist := ss.leaseMap[args.Key]
 		if !exist {
-			libServerList = *new(list.List)
+			libServerList = new(list.List)
 		}
-		leaseRecord := LeaseRecord{args.HostPort, storagerpc.LeaseSeconds + storagerpc.LeaseGuardSeconds}
+		leaseRecord := LeaseRecord{args.HostPort, time.Now()}
 		libServerList.PushBack(leaseRecord)
 		ss.leaseMap[args.Key] = libServerList
 		grantLease = true
@@ -334,7 +335,6 @@ func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutRepl
 	lock.Unlock()
 
 	reply.Status = storagerpc.OK
-	//go ss.timer()
 	return nil
 }
 
@@ -457,56 +457,52 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 	return nil
 }
 
-//currently not used, added for lease expiration
 func (ss *storageServer) timer() {
+	expireTime := time.Duration(storagerpc.LeaseSeconds + storagerpc.LeaseGuardSeconds) * time.Second
 	for {
 		select{
-		case <-time.After(2 * time.Second):
-			//deduct lease time and remove if lease time <= 0
+		case <-time.After(500 * time.Millisecond):
+			//ss.mutex.Lock()
+			//remove if lease expire
 			for _, leaseList := range ss.leaseMap {
-				//deduct lease time
-				for e := leaseList.Front(); e != nil; e = e.Next() {
-					leaseRecord := (e.Value).(LeaseRecord)
-					
-					//if lease ValidSeconds < 0, treat it as invalid
-					if leaseRecord.ValidSeconds > 0 {
-						leaseRecord.ValidSeconds = leaseRecord.ValidSeconds - 2
-					}
-				}
-				
 				//remove expired lease
 				var hasDeleted bool
+				hasDeleted = true
 				for hasDeleted && leaseList.Len() > 0 {
 					hasDeleted = false
 					for e := leaseList.Front(); e != nil; e = e.Next() {
 						leaseRecord := (e.Value).(LeaseRecord)
-					
-						//if lease ValidSeconds <= 0,  it is invalid
-						if leaseRecord.ValidSeconds <= 0 {
+						
+						//remove lease if exceed expireTime
+						if time.Since(leaseRecord.GrantedTime) > expireTime {
 							leaseList.Remove(e)
 							hasDeleted = true
 						}
 					}
 				}
 			}
+			//ss.mutex.Unlock()
 		}
 	}
 }
+
 func (ss *storageServer) revokeHandler(key string, singleRevokeChan chan struct{}, finishRevokeChan chan struct{}) {
 	count := 0
 	for {
 		select {
 		case <-singleRevokeChan:
 			count = count + 1
-//			if count == revokeNum {
 			leaseList := ss.leaseMap[key]
 			if count == leaseList.Len() {
 				finishRevokeChan <- struct{}{}
 				return
 			}
-		case <-time.After( (storagerpc.LeaseGuardSeconds + storagerpc.LeaseSeconds) * time.Second):
-			finishRevokeChan <- struct{}{}
-			return
+		case <-time.After(500 * time.Millisecond):
+			leaseList := ss.leaseMap[key] 
+			if count == leaseList.Len() {
+				finishRevokeChan <- struct{}{}
+				return
+			}
 		}
 	}
 }
@@ -522,7 +518,7 @@ func revokeLease(hostPort string , key string, singleRevokeChan chan struct{}) {
 	var reply storagerpc.RevokeLeaseReply
 	err = client.Call("LeaseCallbacks.RevokeLease", args, &reply)
 	if err != nil {
-		fmt.Println("revoke lease call err")
+		fmt.Println("revoke lease call err", err)
 		return
 	}
 

@@ -20,3 +20,9 @@ _testmain.go
 
 *.exe
 *.test
+
+src/github.com/.DS_Store
+src/github.com/cmu440/.DS_Store
+src/github.com/cmu440/tribbler/.DS_Store
+src/github.com/cmu440/tribbler/storageserver/.DS_Store
+
