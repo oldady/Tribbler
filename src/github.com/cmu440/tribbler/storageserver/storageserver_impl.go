@@ -461,7 +461,7 @@ func (ss *storageServer) timer() {
 	expireTime := time.Duration(storagerpc.LeaseSeconds + storagerpc.LeaseGuardSeconds) * time.Second
 	for {
 		select{
-		case <-time.After(1 * time.Second):
+		case <-time.After(500 * time.Millisecond):
 			//ss.mutex.Lock()
 			//remove if lease expire
 			for _, leaseList := range ss.leaseMap {
@@ -497,16 +497,12 @@ func (ss *storageServer) revokeHandler(key string, singleRevokeChan chan struct{
 				finishRevokeChan <- struct{}{}
 				return
 			}
-		case <-time.After(1 * time.Second):
+		case <-time.After(500 * time.Millisecond):
 			leaseList := ss.leaseMap[key] 
 			if count == leaseList.Len() {
 				finishRevokeChan <- struct{}{}
 				return
 			}
-		
-			/*case <-time.After( (storagerpc.LeaseSeconds + storagerpc.LeaseGuardSeconds) * time.Second):
-			finishRevokeChan <- struct{}{}
-			return*/
 		}
 	}
 }
@@ -522,7 +518,7 @@ func revokeLease(hostPort string , key string, singleRevokeChan chan struct{}) {
 	var reply storagerpc.RevokeLeaseReply
 	err = client.Call("LeaseCallbacks.RevokeLease", args, &reply)
 	if err != nil {
-		fmt.Println("revoke lease call err")
+		fmt.Println("revoke lease call err", err)
 		return
 	}
 
