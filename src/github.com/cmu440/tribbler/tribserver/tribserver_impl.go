@@ -3,9 +3,13 @@ package tribserver
 import (
 	"errors"
 	"fmt"
+	"log"
 	"time"
 	"strconv"
 	"sort"
+	"net"
+	"net/http"
+	"net/rpc"
 	"encoding/json"
 	"github.com/cmu440/tribbler/rpc/tribrpc"
 	"github.com/cmu440/tribbler/libstore"
@@ -15,6 +19,7 @@ type tribServer struct {
 	// TODO: implement this!
 	lib libstore.Libstore
 	id int
+	hostport string
 }
 
 // NewTribServer creates, starts and returns a new TribServer. masterServerHostPort
@@ -24,17 +29,37 @@ type tribServer struct {
 //
 // For hints on how to properly setup RPC, see the rpc/tribrpc package.
 func NewTribServer(masterServerHostPort, myHostPort string) (TribServer, error) {
+	fmt.Println("tribserver being connection!")
 	server := new(tribServer)
 	lib, err := libstore.NewLibstore(masterServerHostPort, myHostPort, libstore.Normal)
 	if err != nil {
-		//fmt.Println("failed to connect!")
+		fmt.Println("failed to connect!")
 		//fmt.Println(err)
 		return nil, err
 	}
 
 	server.lib = lib
 	server.id = 0
+	server.hostport = myHostPort
 
+	// listen for incoming RPC
+	listener, err := net.Listen("tcp", myHostPort)
+	if err != nil {
+		fmt.Println("Listen error!")
+		return nil, err
+	}
+
+	// warp the tribserver 
+	err = rpc.RegisterName("TribServer", tribrpc.Wrap(server))
+    if err != nil {
+    	fmt.Println("RegisterName error!")
+    	return nil, err
+    }
+
+    rpc.HandleHTTP()
+    go http.Serve(listener, nil)
+
+    fmt.Println("server started!!!!!!!")
 	return server, nil
 }
 
@@ -55,8 +80,6 @@ func (ts *tribServer) CreateUser(args *tribrpc.CreateUserArgs, reply *tribrpc.Cr
 		reply.Status = tribrpc.Exists
 		return nil
 	}
-
-
 
 	reply.Status = tribrpc.OK
 	return nil
@@ -129,7 +152,8 @@ func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply
 	SubsKey := GenerateSubsKey(args.UserID)
 	SubsList, err := ts.lib.GetList(SubsKey)
 	if err != nil {
-		//return err
+		reply.Status = tribrpc.OK
+		reply.UserIDs = nil
 		return nil
 	}
 
@@ -149,21 +173,28 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 
 	TribListKey := GenerateTribListKey(args.UserID)
 
-	err = ts.lib.AppendToList(TribListKey, strconv.Itoa(ts.id))
-	if err != nil {
-		reply.Status = tribrpc.Exists
-		return nil
-	}
+	//err = ts.lib.AppendToList(TribListKey, strconv.Itoa(ts.id))
+	//if err != nil {
+	//	reply.Status = tribrpc.Exists
+	//	return nil
+	//}
 
 	var trib tribrpc.Tribble
 	trib.UserID = args.UserID
 	trib.Posted = time.Now()
 	trib.Contents = args.Contents
 
-	TribIDKey := GenerateTribIDKey(args.UserID, strconv.Itoa(ts.id))
+	TribIDKey := GenerateTribIDKey(args.UserID, strconv.Itoa(ts.id), ts.hostport)
 	val, _ := json.Marshal(trib)
 
 	err = ts.lib.Put(TribIDKey, string(val))
+	if err != nil {
+		reply.Status = tribrpc.Exists
+		return nil
+	}
+
+
+	err = ts.lib.AppendToList(TribListKey, TribIDKey)
 	if err != nil {
 		reply.Status = tribrpc.Exists
 		return nil
@@ -175,6 +206,7 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 }
 
 func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.GetTribblesReply) error {
+	//fmt.Println("get tribble begin!")
 	UserKey := GenerateUserKey(args.UserID)
 
 	_, err := ts.lib.Get(UserKey)
@@ -195,15 +227,19 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 
 	var length int
 	length = len(TribIDs)
+	fmt.Println("actual length:",length)
+	log.Print(length)
 	if length > 100 {
 		length = 100
 	}
 	reply.Tribbles = make([]tribrpc.Tribble, length)
 
 	for i := 0; i < length; i++ {
-		TribIDKey := GenerateTribIDKey(args.UserID, TribIDs[len(TribIDs)-1-i])
+		//TribIDKey := GenerateTribIDKey(args.UserID, TribIDs[len(TribIDs)-1-i])
+		TribIDKey := TribIDs[len(TribIDs)-1-i]
 		val, err := ts.lib.Get(TribIDKey)
 		if err != nil {
+		//	continue
 			reply.Status = tribrpc.NoSuchUser
 			return errors.New("get invalid tribble")
 		}
@@ -289,7 +325,7 @@ func GenerateTribListKey(UserID string) (TribListKey string) {
 	return TribListKey
 }
 
-func GenerateTribIDKey(UserID string, id string) (TribIDKey string) {
-	TribIDKey = fmt.Sprintf("%s:%s", UserID, id)
+func GenerateTribIDKey(UserID string, id string, hostport string) (TribIDKey string) {
+	TribIDKey = fmt.Sprintf("%s:%s:%s", UserID, id, hostport)
 	return TribIDKey
 }
