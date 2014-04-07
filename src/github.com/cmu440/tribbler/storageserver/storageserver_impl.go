@@ -42,6 +42,8 @@ type storageServer struct {
 
 	mutex *sync.Mutex //lock when adding to lockMap
 
+	//keep HTTP client
+	clientMap map[string]*rpc.Client
 }
 
 // NewStorageServer creates and starts a new StorageServer. masterServerHostPort
@@ -68,7 +70,8 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 	newServer.leaseMap = make(map[string]*list.List)
 	newServer.lockMap = make(map[string]*sync.Mutex)
 	newServer.mutex = new(sync.Mutex)
-
+	newServer.clientMap = make(map[string]*rpc.Client)
+	
 	if len(masterServerHostPort) == 0 {
 		//add itself to nodeMap
 		newServer.nodeMap[nodeID] = storagerpc.Node{portStr, nodeID}
@@ -318,7 +321,7 @@ func (ss *storageServer) Put(args *storagerpc.PutArgs, reply *storagerpc.PutRepl
 		go ss.revokeHandler(args.Key, singleRevokeChan, finishRevokeChan)
 		for e := leaseHolderList.Front(); e != nil; e = e.Next() {
 			leaseHolder := (e.Value).(LeaseRecord)
-			go revokeLease(leaseHolder.HostPort, args.Key, singleRevokeChan)
+			go ss.revokeLease(leaseHolder.HostPort, args.Key, singleRevokeChan)
 		}
 		//wait until all lease holders reply or leases have expired
 		<-finishRevokeChan
@@ -367,7 +370,7 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 		go ss.revokeHandler(args.Key, singleRevokeChan, finishRevokeChan)
 		for e := leaseHolderList.Front(); e != nil; e = e.Next() {
 			leaseHolder := (e.Value).(LeaseRecord)
-			go revokeLease(leaseHolder.HostPort, args.Key, singleRevokeChan)
+			go ss.revokeLease(leaseHolder.HostPort, args.Key, singleRevokeChan)
 		}
 		//wait until all lease holders reply or leases have expired
 		<-finishRevokeChan
@@ -437,7 +440,7 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 		go ss.revokeHandler(args.Key, singleRevokeChan, finishRevokeChan)
 		for e := leaseHolderList.Front(); e != nil; e = e.Next() {
 			leaseHolder := (e.Value).(LeaseRecord)
-			go revokeLease(leaseHolder.HostPort, args.Key, singleRevokeChan)
+			go ss.revokeLease(leaseHolder.HostPort, args.Key, singleRevokeChan)
 		}
 		//wait until all lease holders reply or leases have expired
 		<-finishRevokeChan
@@ -523,16 +526,21 @@ func (ss *storageServer) revokeHandler(key string, singleRevokeChan chan struct{
 	}
 }
 
-func revokeLease(hostPort string , key string, singleRevokeChan chan struct{}) {
-	client, err := rpc.DialHTTP("tcp", hostPort)
-	if err != nil {
-		fmt.Println("revoke lease err")
-		return
+func (ss *storageServer) revokeLease(hostPort string , key string, singleRevokeChan chan struct{}) {
+	client, exist := ss.clientMap[hostPort]
+	if !exist {
+		cli, err := rpc.DialHTTP("tcp", hostPort)
+		if err != nil {
+			fmt.Println("revoke lease err")
+			return
+		}
+		ss.clientMap[hostPort] = cli
 	}
+	client = ss.clientMap[hostPort]
 
 	args := &storagerpc.RevokeLeaseArgs{key}
 	var reply storagerpc.RevokeLeaseReply
-	err = client.Call("LeaseCallbacks.RevokeLease", args, &reply)
+	err := client.Call("LeaseCallbacks.RevokeLease", args, &reply)
 	if err != nil {
 		fmt.Println("revoke lease call err", err)
 		return
