@@ -32,7 +32,7 @@ type storageServer struct {
 	//functional var of storage servers
 	nodeList    []storagerpc.Node
 	keyValueMap map[string]string
-	keyListMap  map[string]map[string]struct{} //key->list<string>
+	keyListMap  map[string]*list.List //key->list<string>
 
 	//storage server
 	leaseMap map[string]*list.List //key->list<Lease>//map key to list<Libstore's Hostport String, vaid time>
@@ -64,7 +64,7 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 	newServer.serverReady = false
 	newServer.nodeList = make([]storagerpc.Node, numNodes)
 	newServer.keyValueMap = make(map[string]string)
-	newServer.keyListMap = make(map[string]map[string]struct{})
+	newServer.keyListMap = make(map[string]*list.List)
 	newServer.leaseMap = make(map[string]*list.List)
 	newServer.lockMap = make(map[string]*sync.Mutex)
 	newServer.mutex = new(sync.Mutex)
@@ -270,11 +270,12 @@ func (ss *storageServer) GetList(args *storagerpc.GetArgs, reply *storagerpc.Get
 		reply.Status = storagerpc.KeyNotFound
 	} else {
 		//convert list format from "map" to "[]string"
-		listSize := len(list)
+		listSize := list.Len()
 		replyList := make([]string, listSize)
 
 		i := 0
-		for val, _ := range list {
+		for e := list.Front(); e != nil; e = e.Next() {
+			val := (e.Value).(string)
 			replyList[i] = val
 			i = i + 1
 		}
@@ -378,16 +379,25 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 	//modify value
 	valList, exist := ss.keyListMap[args.Key]
 	if !exist { //key does not exist in the keyListMap yet
-		valList = make(map[string]struct{})
-		valList[args.Value] = struct{}{}
+		valList = new(list.List)
+		valList.PushBack(args.Value)
 		ss.keyListMap[args.Key] = valList
 		reply.Status = storagerpc.OK
 	} else { //key exists in the keyListMap, so check whether item exists
-		_, exist = valList[args.Value]
-		if exist { //item already exist
+		
+		//_, exist = valList[args.Value]
+		hasVal := false
+		for e := valList.Front(); e != nil; e = e.Next() {
+			val := (e.Value).(string)
+			if val == args.Value {
+				hasVal = true
+				break
+			}
+		}
+		if hasVal { //item already exist
 			reply.Status = storagerpc.ItemExists
 		} else {
-			valList[args.Value] = struct{}{}
+			valList.PushBack(args.Value)
 			reply.Status = storagerpc.OK
 		}
 	}
@@ -441,11 +451,19 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 	if !exist { //key does not exist in the keyListMap yet
 		reply.Status = storagerpc.ItemNotFound
 	} else { //key exists in the keyListMap, so check whether item exists
-		_, exist = valList[args.Value]
-		if exist { //item already exist
-			delete(valList, args.Value)
-			reply.Status = storagerpc.OK
-		} else { //item doesn't exist
+		
+		//_, exist = valList[args.Value]
+		hasVal := false
+		for e := valList.Front(); e != nil; e = e.Next() {
+			val := (e.Value).(string)
+			if val == args.Value { //item already exist
+				valList.Remove(e)
+				reply.Status = storagerpc.OK
+				hasVal = true
+				break
+			}
+		}
+		if !hasVal { 
 			reply.Status = storagerpc.ItemNotFound
 		}
 	}
