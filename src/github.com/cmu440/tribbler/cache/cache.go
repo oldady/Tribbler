@@ -17,6 +17,7 @@ type Entry struct {
 	granted bool
 	val interface{}
 	query *list.List
+	lock sync.Mutex
 
 	leaseTime time.Time
 	leaseDur time.Duration
@@ -30,29 +31,36 @@ func NewCache() *Cache {
 }
 
 func (cache *Cache) Get(key string, args *storagerpc.GetArgs) (interface{}, error){
-	cache.mu.Lock()
+	///cache.mu.Lock()
 
 	// it first clear the expired keys
 	cache.Clear()
 
 	// check if there exist key
 	entry, ok := cache.datamap[key]
+
 	if ok == false {
+		///cache.mu.Unlock()
+
 		entry = new(Entry)
 		entry.query = list.New()
 		entry.query.PushBack(time.Now())
 
+		///cache.mu.Lock()
 		cache.datamap[key] = entry
 
-		cache.mu.Unlock()
+		///cache.mu.Unlock()
 		return "", errors.New("KeyNotFound")
 	}
 
+	///cache.mu.Unlock()
 	// check if lease is granted
+
+	///entry.lock.Lock()
 	if entry.granted == true {
 		val := entry.val
-		cache.mu.Unlock()
-
+		//cache.mu.Unlock()
+		///entry.lock.Unlock()
 		return val, nil
 	}
 
@@ -62,12 +70,13 @@ func (cache *Cache) Get(key string, args *storagerpc.GetArgs) (interface{}, erro
 		args.WantLease = true
 	}
 
-	cache.mu.Unlock()
+	//cache.mu.Unlock()
+	///entry.lock.Unlock()
 	return "", errors.New("KeyNotFound")
 }
 
 func (cache *Cache) Insert(key string, val interface{}, lease storagerpc.Lease) {
-	cache.mu.Lock()
+	///cache.mu.Lock()
 
 	// first check if there exist key
 	entry, ok := cache.datamap[key]
@@ -78,13 +87,19 @@ func (cache *Cache) Insert(key string, val interface{}, lease storagerpc.Lease) 
 		cache.datamap[key] = entry
 	}
 
+	///cache.mu.Unlock()
+
 	// insert values
+	///entry.lock.Lock()
+
 	entry.granted = true
 	entry.val = val
 	entry.leaseTime = time.Now()
 	entry.leaseDur = time.Duration(lease.ValidSeconds) * time.Second
 
-	cache.mu.Unlock()
+	///entry.lock.Unlock()
+
+	//cache.mu.Unlock()
 }
 
 func (cache *Cache) Clear() {
@@ -114,13 +129,18 @@ func (cache *Cache) Clear() {
 }
 
 func (cache *Cache) Revoke(key string) bool{
-	cache.mu.Lock()
+	///cache.mu.Lock()
 
 	entry, ok := cache.datamap[key]
+	///cache.mu.Unlock()
+
+	//entry.lock.Lock()
 	if ok == true {
+		///entry.lock.Lock()
 		entry.granted = false
+		///entry.lock.Unlock()
 	}
 
-	cache.mu.Unlock()
+	//cache.mu.Unlock()
 	return ok
 }

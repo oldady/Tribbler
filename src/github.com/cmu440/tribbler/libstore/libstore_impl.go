@@ -7,6 +7,7 @@ import (
 	"strings"
 	"fmt"
 	"time"
+	"math"
 	"github.com/cmu440/tribbler/cache"
 	"github.com/cmu440/tribbler/rpc/librpc"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
@@ -90,13 +91,14 @@ func NewLibstore(masterServerHostPort, myHostPort string, mode LeaseMode) (Libst
 }
 
 func CleanCache(leases *cache.Cache) {
-	d := time.Duration(storagerpc.LeaseGuardSeconds) * time.Second
+	//d := time.Duration(storagerpc.LeaseGuardSeconds) * time.Second
 
 	for {
 		//leases.mu.Lock()
 		leases.Clear()
 		//leases.mu.Unlock()
-		time.Sleep(d)
+		//time.Sleep(d)
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
@@ -296,12 +298,35 @@ func (ls *libstore) GetServer(key string) (*rpc.Client, error) {
 	var srvid int
 	srvid = 0
 
-	for i := 0; i < len(ls.nodes); i++ {
-		if ls.nodes[i].NodeID >= hashValue {
+	var minNodeID uint32
+	var targetNodeID uint32
+	var minid int
+	minNodeID = math.MaxUint32
+	targetNodeID = math.MaxUint32
+
+	for i:=0; i < len(ls.nodes); i++ {
+		nodeID := ls.nodes[i].NodeID
+		if nodeID >=hashValue && nodeID < targetNodeID {
+			targetNodeID = nodeID
 			srvid = i
-			break
+		}
+
+		if nodeID < minNodeID {
+			minNodeID = nodeID
+			minid = i
 		}
 	}
+
+	if targetNodeID == math.MaxUint32 {
+		srvid = minid
+		targetNodeID = minNodeID
+	}
+	//for i := 0; i < len(ls.nodes); i++ {
+	//	if ls.nodes[i].NodeID >= hashValue {
+	//		srvid = i
+	//		break
+	//	}
+	//}
 
 	//fmt.Println("srvid is:", srvid)
 	if ls.rpcClient[srvid] == nil {
