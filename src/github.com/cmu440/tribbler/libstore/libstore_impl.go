@@ -93,7 +93,9 @@ func CleanCache(leases *cache.Cache) {
 	d := time.Duration(storagerpc.LeaseGuardSeconds) * time.Second
 
 	for {
+		//leases.mu.Lock()
 		leases.Clear()
+		//leases.mu.Unlock()
 		time.Sleep(d)
 	}
 }
@@ -276,7 +278,7 @@ func (ls *libstore) AppendToList(key, newItem string) error {
 }
 
 func (ls *libstore) RevokeLease(args *storagerpc.RevokeLeaseArgs, reply *storagerpc.RevokeLeaseReply) error {
-	fmt.Println("Revoke Happened!")
+	//fmt.Println("Revoke Happened!")
 	ok := ls.leases.Revoke(args.Key)
 
 	if ok == true {

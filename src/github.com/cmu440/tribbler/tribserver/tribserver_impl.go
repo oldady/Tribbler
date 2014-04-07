@@ -3,7 +3,7 @@ package tribserver
 import (
 	"errors"
 	"fmt"
-	"log"
+	//"log"
 	"time"
 	"strconv"
 	"sort"
@@ -163,6 +163,7 @@ func (ts *tribServer) GetSubscriptions(args *tribrpc.GetSubscriptionsArgs, reply
 }
 
 func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.PostTribbleReply) error {
+	fmt.Println(args.Contents)
 	UserKey := GenerateUserKey(args.UserID)
 
 	_, err := ts.lib.Get(UserKey)
@@ -190,6 +191,7 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 	err = ts.lib.Put(TribIDKey, string(val))
 	if err != nil {
 		reply.Status = tribrpc.Exists
+		fmt.Println("trib id already exist!")
 		return nil
 	}
 
@@ -225,10 +227,14 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 		return nil
 	}
 
+    //for i := 0; i < len(TribIDs); i++ {
+    //	fmt.Println(TribIDs[i])
+    //}
+
 	var length int
 	length = len(TribIDs)
-	fmt.Println("actual length:",length)
-	log.Print(length)
+	//fmt.Println("actual length:",length)
+	//log.Print(length)
 	if length > 100 {
 		length = 100
 	}
@@ -243,10 +249,20 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 			reply.Status = tribrpc.NoSuchUser
 			return errors.New("get invalid tribble")
 		}
+		if val == "" {
+			return errors.New("empty string!!!!")
+		}
 		json.Unmarshal([]byte(val), &(reply.Tribbles[i]))
 	}
 
 	reply.Status = tribrpc.OK
+	//for i := 0; i < len(reply.Tribbles); i++ {
+	//	fmt.Println("result of getting tribbles")
+	//	fmt.Print(reply.Tribbles[i].UserID+" ")
+	//	//fmt.Print(reply.Tribbles[i].Posted)
+	//	fmt.Print(reply.Tribbles[i].Contents)
+	//	fmt.Println()
+	//}
 	return nil
 }
 
