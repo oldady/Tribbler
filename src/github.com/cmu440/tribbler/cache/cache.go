@@ -1,26 +1,26 @@
 package cache
 
 import (
+	"container/list"
+	"errors"
+	"github.com/cmu440/tribbler/rpc/storagerpc"
 	"sync"
 	"time"
-	"errors"
-	"container/list"
-	"github.com/cmu440/tribbler/rpc/storagerpc"
 )
 
 type Cache struct {
-	mu sync.Mutex
+	mu      sync.Mutex
 	datamap map[string]*Entry
 }
 
 type Entry struct {
 	granted bool
-	val interface{}
-	query *list.List
-	lock sync.Mutex
+	val     interface{}
+	query   *list.List
+	lock    sync.Mutex
 
 	leaseTime time.Time
-	leaseDur time.Duration
+	leaseDur  time.Duration
 }
 
 func NewCache() *Cache {
@@ -30,7 +30,7 @@ func NewCache() *Cache {
 	return cache
 }
 
-func (cache *Cache) Get(key string, args *storagerpc.GetArgs) (interface{}, error){
+func (cache *Cache) Get(key string, args *storagerpc.GetArgs) (interface{}, error) {
 	///cache.mu.Lock()
 
 	// it first clear the expired keys
@@ -114,7 +114,7 @@ func (cache *Cache) Clear() {
 		elem := entry.query.Front()
 		for elem != nil {
 			tempdur := time.Since(elem.Value.(time.Time))
-			if tempdur > time.Duration(storagerpc.QueryCacheSeconds) * time.Second {
+			if tempdur > time.Duration(storagerpc.QueryCacheSeconds)*time.Second {
 				_ = entry.query.Remove(elem)
 				elem = entry.query.Front()
 			} else {
@@ -128,7 +128,7 @@ func (cache *Cache) Clear() {
 	}
 }
 
-func (cache *Cache) Revoke(key string) bool{
+func (cache *Cache) Revoke(key string) bool {
 	///cache.mu.Lock()
 
 	entry, ok := cache.datamap[key]

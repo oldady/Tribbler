@@ -2,21 +2,21 @@ package storageserver
 
 import (
 	//"errors"
+	"container/list"
 	"fmt"
 	"github.com/cmu440/tribbler/libstore"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
-	"container/list"
 	"math"
-	"sync"
-	"time"
-	"strings"
+	"net"
 	"net/http"
 	"net/rpc"
-	"net"
+	"strings"
+	"sync"
+	"time"
 )
 
 type LeaseRecord struct {
-	HostPort string
+	HostPort    string
 	GrantedTime time.Time
 }
 
@@ -52,7 +52,6 @@ type storageServer struct {
 // servers in the ring. port is the port number that this server should listen on.
 // nodeID is a random, unsigned 32-bit ID identifying this server.
 
-
 func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID uint32) (StorageServer, error) {
 	portStr := fmt.Sprintf("%d", port)
 	portStr = "localhost:" + portStr
@@ -71,16 +70,16 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 	newServer.lockMap = make(map[string]*sync.Mutex)
 	newServer.mutex = new(sync.Mutex)
 	newServer.clientMap = make(map[string]*rpc.Client)
-	
+
 	if len(masterServerHostPort) == 0 {
 		//add itself to nodeMap
 		newServer.nodeMap[nodeID] = storagerpc.Node{portStr, nodeID}
-		
+
 		//if only one noede, registerServer will not be call by other slaves
 		if numNodes == 1 {
-			newServer.nodeList[0] =  storagerpc.Node{portStr, nodeID}
+			newServer.nodeList[0] = storagerpc.Node{portStr, nodeID}
 		}
-		
+
 		//register to receive RPC from the other servers in the system
 		rpc.RegisterName("MasterServer", newServer)  //for slavves
 		rpc.RegisterName("StorageServer", newServer) //for libServer
@@ -105,9 +104,13 @@ func NewStorageServer(masterServerHostPort string, numNodes, port int, nodeID ui
 		if err != nil {
 			fmt.Println("Err dialing to master node:", err)
 		}
+		for err != nil {
+			time.Sleep(time.Second)
+			client, err = rpc.DialHTTP("tcp", masterServerHostPort)
+		}
 
+		//arg & reply for RPC call to the master node
 		nodeInfo := new(storagerpc.Node)
-		//nodeInfo.HostPort = "localhost" + portStr //already added "localhost"
 		nodeInfo.HostPort = portStr
 		nodeInfo.NodeID = nodeID
 		args := &storagerpc.RegisterArgs{*nodeInfo}
@@ -387,7 +390,7 @@ func (ss *storageServer) AppendToList(args *storagerpc.PutArgs, reply *storagerp
 		ss.keyListMap[args.Key] = valList
 		reply.Status = storagerpc.OK
 	} else { //key exists in the keyListMap, so check whether item exists
-		
+
 		//_, exist = valList[args.Value]
 		hasVal := false
 		for e := valList.Front(); e != nil; e = e.Next() {
@@ -454,7 +457,7 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 	if !exist { //key does not exist in the keyListMap yet
 		reply.Status = storagerpc.ItemNotFound
 	} else { //key exists in the keyListMap, so check whether item exists
-		
+
 		//_, exist = valList[args.Value]
 		hasVal := false
 		for e := valList.Front(); e != nil; e = e.Next() {
@@ -466,7 +469,7 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 				break
 			}
 		}
-		if !hasVal { 
+		if !hasVal {
 			reply.Status = storagerpc.ItemNotFound
 		}
 	}
@@ -477,9 +480,9 @@ func (ss *storageServer) RemoveFromList(args *storagerpc.PutArgs, reply *storage
 }
 
 func (ss *storageServer) timer() {
-	expireTime := time.Duration(storagerpc.LeaseSeconds + storagerpc.LeaseGuardSeconds) * time.Second
+	expireTime := time.Duration(storagerpc.LeaseSeconds+storagerpc.LeaseGuardSeconds) * time.Second
 	for {
-		select{
+		select {
 		case <-time.After(500 * time.Millisecond):
 			//ss.mutex.Lock()
 			//remove if lease expire
@@ -491,7 +494,7 @@ func (ss *storageServer) timer() {
 					hasDeleted = false
 					for e := leaseList.Front(); e != nil; e = e.Next() {
 						leaseRecord := (e.Value).(LeaseRecord)
-						
+
 						//remove lease if exceed expireTime
 						if time.Since(leaseRecord.GrantedTime) > expireTime {
 							leaseList.Remove(e)
@@ -517,7 +520,7 @@ func (ss *storageServer) revokeHandler(key string, singleRevokeChan chan struct{
 				return
 			}
 		case <-time.After(500 * time.Millisecond):
-			leaseList := ss.leaseMap[key] 
+			leaseList := ss.leaseMap[key]
 			if count == leaseList.Len() {
 				finishRevokeChan <- struct{}{}
 				return
@@ -526,7 +529,7 @@ func (ss *storageServer) revokeHandler(key string, singleRevokeChan chan struct{
 	}
 }
 
-func (ss *storageServer) revokeLease(hostPort string , key string, singleRevokeChan chan struct{}) {
+func (ss *storageServer) revokeLease(hostPort string, key string, singleRevokeChan chan struct{}) {
 	client, exist := ss.clientMap[hostPort]
 	if !exist {
 		cli, err := rpc.DialHTTP("tcp", hostPort)
@@ -565,7 +568,7 @@ func (ss *storageServer) isInServerRange(key string) bool {
 		if nodeID >= hashVal && nodeID < targetNodeID {
 			targetNodeID = nodeID
 		}
-		
+
 		//find the min value in all nodeIDs
 		if nodeID < minNodeID {
 			minNodeID = nodeID

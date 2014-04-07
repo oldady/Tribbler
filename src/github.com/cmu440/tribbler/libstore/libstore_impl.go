@@ -3,23 +3,23 @@ package libstore
 import (
 	//"log"
 	"errors"
-	"net/rpc"
-	"strings"
 	"fmt"
-	"time"
-	"math"
 	"github.com/cmu440/tribbler/cache"
 	"github.com/cmu440/tribbler/rpc/librpc"
 	"github.com/cmu440/tribbler/rpc/storagerpc"
+	"math"
+	"net/rpc"
+	"strings"
+	"time"
 )
 
 type libstore struct {
 	// TODO: implement this!
-	hostport string
-	mode LeaseMode
-	nodes []storagerpc.Node
+	hostport  string
+	mode      LeaseMode
+	nodes     []storagerpc.Node
 	rpcClient []*rpc.Client
-	leases *cache.Cache
+	leases    *cache.Cache
 }
 
 // NewLibstore creates a new instance of a TribServer's libstore. masterServerHostPort
@@ -144,7 +144,7 @@ func (ls *libstore) Get(key string) (string, error) {
 	// insert into cache
 	if reply.Lease.Granted {
 		ls.leases.Insert(key, reply.Value, reply.Lease)
-	} 
+	}
 
 	return reply.Value, nil
 }
@@ -304,9 +304,9 @@ func (ls *libstore) GetServer(key string) (*rpc.Client, error) {
 	minNodeID = math.MaxUint32
 	targetNodeID = math.MaxUint32
 
-	for i:=0; i < len(ls.nodes); i++ {
+	for i := 0; i < len(ls.nodes); i++ {
 		nodeID := ls.nodes[i].NodeID
-		if nodeID >=hashValue && nodeID < targetNodeID {
+		if nodeID >= hashValue && nodeID < targetNodeID {
 			targetNodeID = nodeID
 			srvid = i
 		}

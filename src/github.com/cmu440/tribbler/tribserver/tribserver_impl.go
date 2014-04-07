@@ -4,21 +4,21 @@ import (
 	"errors"
 	"fmt"
 	//"log"
-	"time"
-	"strconv"
-	"sort"
+	"encoding/json"
+	"github.com/cmu440/tribbler/libstore"
+	"github.com/cmu440/tribbler/rpc/tribrpc"
 	"net"
 	"net/http"
 	"net/rpc"
-	"encoding/json"
-	"github.com/cmu440/tribbler/rpc/tribrpc"
-	"github.com/cmu440/tribbler/libstore"
+	"sort"
+	"strconv"
+	"time"
 )
 
 type tribServer struct {
 	// TODO: implement this!
-	lib libstore.Libstore
-	id int
+	lib      libstore.Libstore
+	id       int
 	hostport string
 }
 
@@ -49,17 +49,17 @@ func NewTribServer(masterServerHostPort, myHostPort string) (TribServer, error) 
 		return nil, err
 	}
 
-	// warp the tribserver 
+	// warp the tribserver
 	err = rpc.RegisterName("TribServer", tribrpc.Wrap(server))
-    if err != nil {
-    	fmt.Println("RegisterName error!")
-    	return nil, err
-    }
+	if err != nil {
+		fmt.Println("RegisterName error!")
+		return nil, err
+	}
 
-    rpc.HandleHTTP()
-    go http.Serve(listener, nil)
+	rpc.HandleHTTP()
+	go http.Serve(listener, nil)
 
-    fmt.Println("server started!!!!!!!")
+	fmt.Println("server started!!!!!!!")
 	return server, nil
 }
 
@@ -195,7 +195,6 @@ func (ts *tribServer) PostTribble(args *tribrpc.PostTribbleArgs, reply *tribrpc.
 		return nil
 	}
 
-
 	err = ts.lib.AppendToList(TribListKey, TribIDKey)
 	if err != nil {
 		reply.Status = tribrpc.Exists
@@ -227,9 +226,9 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 		return nil
 	}
 
-    //for i := 0; i < len(TribIDs); i++ {
-    //	fmt.Println(TribIDs[i])
-    //}
+	//for i := 0; i < len(TribIDs); i++ {
+	//	fmt.Println(TribIDs[i])
+	//}
 
 	var length int
 	length = len(TribIDs)
@@ -245,7 +244,7 @@ func (ts *tribServer) GetTribbles(args *tribrpc.GetTribblesArgs, reply *tribrpc.
 		TribIDKey := TribIDs[len(TribIDs)-1-i]
 		val, err := ts.lib.Get(TribIDKey)
 		if err != nil {
-		//	continue
+			//	continue
 			reply.Status = tribrpc.NoSuchUser
 			return errors.New("get invalid tribble")
 		}
@@ -318,11 +317,11 @@ func (tribs Tribs) Len() int {
 	return len(tribs)
 }
 
-func (tribs Tribs) Less(i,j int) bool {
+func (tribs Tribs) Less(i, j int) bool {
 	return tribs[i].Posted.After(tribs[j].Posted)
 }
 
-func (tribs Tribs) Swap(i,j int) {
+func (tribs Tribs) Swap(i, j int) {
 	tribs[j], tribs[i] = tribs[i], tribs[j]
 }
 
